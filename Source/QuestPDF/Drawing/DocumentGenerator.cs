@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using QuestPDF.Drawing.Exceptions;
 using QuestPDF.Drawing.Proxy;
 using QuestPDF.Elements;
@@ -10,6 +11,7 @@ using QuestPDF.Elements.Text.Items;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using Diva.FontSubsetting;
 
 namespace QuestPDF.Drawing
 {
@@ -69,7 +71,17 @@ namespace QuestPDF.Drawing
             var container = new DocumentContainer();
             document.Compose(container);
             var content = container.Compose();
-            ApplyInheritedAndGlobalTexStyle(content, TextStyle.Default);
+
+            var subsets = new Dictionary<string, StringBuilder>();
+            var suffix = Guid.NewGuid().ToString();
+            
+            ApplyInheritedAndGlobalTexStyle(content, TextStyle.Default, subsets, suffix);
+            
+            // サブセットフォントを作成し登録
+            foreach (var name in subsets.Keys
+                         .Where(name => subsets[name].Length != 0))
+                FontManagerHelper.RegisterFont(name, subsets[name].ToString(), suffix);
+
             ApplyContentDirection(content, ContentDirection.LeftToRight);
             
             var debuggingState = Settings.EnableDebugging ? ApplyDebugging(content) : null;
@@ -80,6 +92,9 @@ namespace QuestPDF.Drawing
             var pageContext = new PageContext();
             RenderPass(pageContext, new FreeCanvas(), content, debuggingState);
             RenderPass(pageContext, canvas, content, debuggingState);
+            
+            // サブセットフォントを削除
+            FontManagerHelper.RemoveSubsetFontsBySuffix(suffix);
         }
         
         internal static void RenderPass<TCanvas>(PageContext pageContext, TCanvas canvas, Container content, DebuggingState? debuggingState)
@@ -224,6 +239,63 @@ namespace QuestPDF.Drawing
 
             foreach (var child in content.GetChildren())
                 ApplyInheritedAndGlobalTexStyle(child, documentDefaultTextStyle);
+        }
+
+        /// <summary>
+        /// デフォルトのTextStyleを設定する。
+        /// フォント名が指定されている場合、suffix を付けたサブセットフォント名に変更し、フォント名ごとに使われているテキストを収集する。
+        /// </summary>
+        /// <param name="content"></param>
+        /// <param name="documentDefaultTextStyle"></param>
+        /// <param name="subsets">Key: フォントファミリー名, Value: 使われているテキスト</param>
+        /// <param name="suffix">サブセットフォントのフォントファミリー名に付ける接尾辞</param>
+        internal static void ApplyInheritedAndGlobalTexStyle(this Element? content, TextStyle documentDefaultTextStyle, 
+            Dictionary<string, StringBuilder> subsets, string suffix)
+        {
+            if (content == null)
+                return;
+            
+            if (content is TextBlock textBlock)
+            {
+                foreach (var textBlockItem in textBlock.Items)
+                {
+                    if (textBlockItem is TextBlockSpan textSpan)
+                    {
+                        textSpan.Style = textSpan.Style.ApplyInheritedStyle(documentDefaultTextStyle).ApplyGlobalStyle();
+                        
+                        // フォント名
+                        var name = textSpan.Style.FontFamily!;
+                        if (name.EndsWith(suffix)) 
+                            // 既に上書きしたサブセットフォント名を継承している場合は、「+suffix」部分を除く。
+                            name = name[..(name.Length - suffix.Length - 1)];
+                
+                        // suffixを付けたサブセットフォント名に上書き
+                        textSpan.Style.FontFamily = FontSubsetter.GetSubsetFontFamilyName(name, suffix);
+
+                        // フォント名ごとにテキストを収集
+                        if (!subsets.ContainsKey(name))
+                            subsets.Add(name, new StringBuilder());
+
+                        if (!string.IsNullOrEmpty(textSpan.Text))
+                            subsets[name].Append(textSpan.Text);
+                    }
+
+                    if (textBlockItem is TextBlockElement textElement)
+                        ApplyInheritedAndGlobalTexStyle(textElement.Element, documentDefaultTextStyle, subsets, suffix);
+                }
+                
+                return;
+            }
+
+            if (content is DynamicHost dynamicHost)
+                dynamicHost.TextStyle = dynamicHost.TextStyle.ApplyInheritedStyle(documentDefaultTextStyle);
+
+            if (content is DefaultTextStyle defaultTextStyleElement)
+                documentDefaultTextStyle =
+                    defaultTextStyleElement.TextStyle.ApplyInheritedStyle(documentDefaultTextStyle);
+
+            foreach (var child in content.GetChildren())
+                ApplyInheritedAndGlobalTexStyle(child, documentDefaultTextStyle, subsets, suffix);
         }
     }
 }
