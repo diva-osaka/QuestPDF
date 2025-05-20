@@ -74,7 +74,7 @@ namespace QuestPDF.Drawing
 
             var subsets = new Dictionary<string, StringBuilder>();
             var suffix = Guid.NewGuid().ToString();
-            
+
             ApplyInheritedAndGlobalTexStyle(content, TextStyle.Default, subsets, suffix);
             
             // サブセットフォントを作成し登録
@@ -262,15 +262,12 @@ namespace QuestPDF.Drawing
                     if (textBlockItem is TextBlockSpan textSpan)
                     {
                         textSpan.Style = textSpan.Style.ApplyInheritedStyle(documentDefaultTextStyle).ApplyGlobalStyle();
+                        textSpan.Style = textSpan.Style.ApplyInheritedStyle(documentDefaultTextStyle)
+                            .ApplyGlobalStyle();
                         
-                        // フォント名
-                        var name = textSpan.Style.FontFamily!;
-                        if (name.EndsWith(suffix)) 
-                            // 既に上書きしたサブセットフォント名を継承している場合は、「+suffix」部分を除く。
-                            name = name[..(name.Length - suffix.Length - 1)];
-                
                         // suffixを付けたサブセットフォント名に上書き
-                        textSpan.Style.FontFamily = FontSubsetter.GetSubsetFontFamilyName(name, suffix);
+                        var name = textSpan.Style.FontFamily!;
+                        textSpan.Style.Mutate(TextStyleProperty.FontFamily, FontSubsetter.GetSubsetFontFamilyName(name, suffix));
 
                         // フォント名ごとにテキストを収集
                         if (!subsets.ContainsKey(name))
@@ -283,16 +280,19 @@ namespace QuestPDF.Drawing
                     if (textBlockItem is TextBlockElement textElement)
                         ApplyInheritedAndGlobalTexStyle(textElement.Element, documentDefaultTextStyle, subsets, suffix);
                 }
-                
+
                 return;
             }
 
             if (content is DynamicHost dynamicHost)
+            {
                 dynamicHost.TextStyle = dynamicHost.TextStyle.ApplyInheritedStyle(documentDefaultTextStyle);
+                dynamicHost.Subsets = subsets;
+                dynamicHost.SubsetSuffix = suffix;
+            }
 
             if (content is DefaultTextStyle defaultTextStyleElement)
-                documentDefaultTextStyle =
-                    defaultTextStyleElement.TextStyle.ApplyInheritedStyle(documentDefaultTextStyle);
+                documentDefaultTextStyle = defaultTextStyleElement.TextStyle.ApplyInheritedStyle(documentDefaultTextStyle);
 
             foreach (var child in content.GetChildren())
                 ApplyInheritedAndGlobalTexStyle(child, documentDefaultTextStyle, subsets, suffix);

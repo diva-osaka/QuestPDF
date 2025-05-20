@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Text;
 using QuestPDF.Drawing;
 using QuestPDF.Drawing.Exceptions;
 using QuestPDF.Helpers;
@@ -14,6 +16,10 @@ namespace QuestPDF.Elements
         internal TextStyle TextStyle { get; set; } = TextStyle.Default;
         public ContentDirection ContentDirection { get; set; }
         
+        // サブセットフォント情報
+        internal Dictionary<string, StringBuilder> Subsets { get; set; }
+        internal string SubsetSuffix { get; set; }
+
         public DynamicHost(DynamicComponentProxy child)
         {
             Child = child;
@@ -58,6 +64,10 @@ namespace QuestPDF.Elements
                 TextStyle = TextStyle,
                 ContentDirection = ContentDirection,
                 
+                // サブセットフォント情報を設定
+                Subsets = Subsets,
+                SubsetSuffix = SubsetSuffix,
+                
                 PageNumber = PageContext.CurrentPage,
                 TotalPages = PageContext.GetLocation(Infrastructure.PageContext.DocumentLocation).PageEnd,
                 AvailableSize = availableSize
@@ -80,6 +90,10 @@ namespace QuestPDF.Elements
         internal TextStyle TextStyle { get; set; }
         internal ContentDirection ContentDirection { get; set; }
     
+        // サブセットフォント情報
+        internal Dictionary<string, StringBuilder> Subsets { get; set; }
+        internal string SubsetSuffix { get; set; }
+        
         public int PageNumber { get; internal set; }
         public int TotalPages { get; internal set; }
         public Size AvailableSize { get; internal set; }
@@ -89,7 +103,8 @@ namespace QuestPDF.Elements
             var container = new DynamicElement();
             content(container);
             
-            container.ApplyInheritedAndGlobalTexStyle(TextStyle);
+            // サブセットフォント情報を渡す
+            container.ApplyInheritedAndGlobalTexStyle(TextStyle, Subsets, SubsetSuffix);
             container.ApplyContentDirection(ContentDirection);
             
             container.InjectDependencies(PageContext, Canvas);
