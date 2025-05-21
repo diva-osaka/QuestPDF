@@ -120,7 +120,6 @@ namespace QuestPDF.Drawing
             RenderPass(pageContext, canvas, content, debuggingState);
 
             // サブセットフォントを削除
-            var a = FontManagerHelper.GetStyleSet();
             FontManagerHelper.RemoveSubsetFontsBySuffix(suffix);
             FontManagerHelper.RemoveSubsetFontsBySuffix(dynamicSuffix);
         }
