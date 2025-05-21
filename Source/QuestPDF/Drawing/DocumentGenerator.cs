@@ -72,8 +72,14 @@ namespace QuestPDF.Drawing
             document.Compose(container);
             var content = container.Compose();
 
-            var subsets = new Dictionary<string, StringBuilder>();
-            var dynamicSubsets = new Dictionary<string, StringBuilder>();
+            // FontManagerに登録されているフォントファミリー名
+            var registeredFontNames = FontManagerHelper.GetStyleSet()
+                .Keys
+                .OfType<string>()
+                .ToList();
+            
+            var subsets = registeredFontNames.ToDictionary(name => name, _ => new StringBuilder());
+            var dynamicSubsets = registeredFontNames.ToDictionary(name => name, _ => new StringBuilder());
             var suffix = Guid.NewGuid().ToString();
             var dynamicSuffix = Guid.NewGuid().ToString();
 
@@ -114,6 +120,7 @@ namespace QuestPDF.Drawing
             RenderPass(pageContext, canvas, content, debuggingState);
 
             // サブセットフォントを削除
+            var a = FontManagerHelper.GetStyleSet();
             FontManagerHelper.RemoveSubsetFontsBySuffix(suffix);
             FontManagerHelper.RemoveSubsetFontsBySuffix(dynamicSuffix);
         }
@@ -272,6 +279,10 @@ namespace QuestPDF.Drawing
         /// <param name="suffix">サブセットフォントのフォントファミリー名に付ける接尾辞</param>
         /// <param name="dynamicSubsets">DynamicHostに渡すdictionary</param>
         /// <param name="dynamicSuffix">DynamicHostに渡すサブセットフォントのフォントファミリー名に付ける接尾辞</param>
+        /// <remarks>
+        /// dictionaryにはあらかじめ登録済みのフォントファミリー名を格納しておくこと。
+        /// 登録済みの場合のみテキストの収集とフォント名にsuffixを付ける。
+        /// </remarks>
         internal static void ApplyInheritedAndGlobalTexStyle(this Element? content, TextStyle documentDefaultTextStyle, 
             Dictionary<string, StringBuilder>? subsets, 
             string? suffix,
@@ -292,20 +303,15 @@ namespace QuestPDF.Drawing
                         
                         // suffixを付けたサブセットフォント名に上書き
                         var name = textSpan.Style.FontFamily!;
-                        if (suffix != null)
+                        if (suffix != null && subsets?.ContainsKey(name) == true)
                         {
                             var subsetFontName = FontSubsetter.GetSubsetFontFamilyName(name, suffix);
                             textSpan.Style = textSpan.Style.Mutate(TextStyleProperty.FontFamily, subsetFontName);
                         }
 
                         // フォント名ごとにテキストを収集
-                        if (subsets != null)
-                            if (!string.IsNullOrEmpty(textSpan.Text))
-                            {
-                                if (!subsets.ContainsKey(name))
-                                    subsets.Add(name, new StringBuilder());
-                                subsets[name].Append(textSpan.Text);
-                            }
+                        if (subsets != null && subsets.ContainsKey(name) && !string.IsNullOrEmpty(textSpan.Text)) 
+                            subsets[name].Append(textSpan.Text);
                     }
 
                     if (textBlockItem is TextBlockElement textElement)

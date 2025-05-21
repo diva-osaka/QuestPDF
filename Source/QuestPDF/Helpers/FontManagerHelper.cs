@@ -176,7 +176,7 @@ public static class FontManagerHelper
     /// </summary>
     /// <returns></returns>
     /// <exception cref="InvalidOperationException"></exception>
-    private static IDictionary GetStyleSet()
+    public static IDictionary GetStyleSet()
     {
         var fontManagerType = typeof(FontManager);
         var styleSetField = fontManagerType.GetField("StyleSets",
