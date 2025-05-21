@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using Diva.FontSubsetting;
 using QuestPDF.Drawing;
+using QuestPDF.Infrastructure;
 using SkiaSharp;
 
 namespace QuestPDF.Helpers;
@@ -30,13 +31,11 @@ public static class FontManagerHelper
         var subsetFonts = FontSubsetter.SubsetFonts(fontBytes, subsetString, suffix, includesAsciiPrintableCharacters);
 
         lock (LockObject)
-        {
             foreach (var subsetFont in subsetFonts)
             {
                 using var stream = new MemoryStream(subsetFont);
                 FontManager.RegisterFont(stream);
             }
-        }
     }
 
     /// <summary>
@@ -213,6 +212,84 @@ public static class FontManagerHelper
         {
             var encodeSuffix = FontSubsetter.EncodeSuffix(suffix);
             RemoveFontsInternal(x => x.EndsWith($"+{encodeSuffix}"));
+        }
+
+        RemoveShaperFontsBySuffix(suffix);
+    }
+
+    /// <summary>
+    /// FontManagerのShaperFontsを取得します。
+    /// </summary>
+    /// <returns>ShaperFontsディクショナリ</returns>
+    /// <exception cref="InvalidOperationException">ShaperFontsが見つからない場合</exception>
+    private static IDictionary GetShaperFonts()
+    {
+        var fontManagerType = typeof(FontManager);
+        var shaperFontsField = fontManagerType.GetField("ShaperFonts",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        return shaperFontsField?.GetValue(null) as IDictionary
+               ?? throw new InvalidOperationException("FontManager.ShaperFonts is null");
+    }
+
+    /// <summary>
+    /// lock内で実行される内部メソッド - ShaperFontsから条件に合致するTextStyleを削除します
+    /// </summary>
+    private static void RemoveShaperFontsInternal(Func<TextStyle, bool> textStylePredicate)
+    {
+        var shaperFonts = GetShaperFonts();
+        var keysToRemove = shaperFonts.Keys
+            .OfType<TextStyle>()
+            .Where(textStylePredicate)
+            .ToList();
+
+        var shaperFontsType = shaperFonts.GetType();
+        var tryRemoveMethod = shaperFontsType
+            .GetMethod(
+                "TryRemove",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+                [
+                    typeof(TextStyle),
+                    shaperFontsType.GenericTypeArguments[1].MakeByRefType()
+                ]
+            ) ?? throw new InvalidOperationException("FontManager.ShaperFonts.TryRemove is null");
+
+        foreach (var key in keysToRemove)
+        {
+            tryRemoveMethod.Invoke(shaperFonts, [key, null]);
+        }
+    }
+
+    /// <summary>
+    /// 指定のsuffixの付くTextStyleをShaperFontsから削除します。
+    /// </summary>
+    /// <param name="suffix">サブセットフォントのフォントファミリー名の接尾辞（未エンコード）</param>
+    public static void RemoveShaperFontsBySuffix(string suffix)
+    {
+        lock (LockObject)
+        {
+            var encodeSuffix = FontSubsetter.EncodeSuffix(suffix);
+            RemoveShaperFontsInternal(textStyle => textStyle.FontFamily != null &&
+                                                   textStyle.FontFamily.EndsWith($"+{encodeSuffix}"));
+        }
+    }
+
+    /// <summary>
+    /// FontManagerのShaperFontsを完全にクリアします。
+    /// </summary>
+    /// <remarks>
+    /// このメソッドは、すべてのTextStyleに関連付けられたShaperFontsを削除します。
+    /// フォントをリロードする際などに使用します。
+    /// </remarks>
+    public static void ClearShaperFonts()
+    {
+        lock (LockObject)
+        {
+            var shaperFonts = GetShaperFonts();
+            var clearMethod = shaperFonts.GetType().GetMethod("Clear",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            clearMethod?.Invoke(shaperFonts, null);
         }
     }
 }

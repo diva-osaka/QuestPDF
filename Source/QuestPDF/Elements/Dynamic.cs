@@ -17,8 +17,8 @@ namespace QuestPDF.Elements
         public ContentDirection ContentDirection { get; set; }
         
         // サブセットフォント情報
-        internal Dictionary<string, StringBuilder> Subsets { get; set; }
-        internal string SubsetSuffix { get; set; }
+        internal Dictionary<string, StringBuilder>? Subsets { get; set; }
+        internal string? SubsetSuffix { get; set; }
 
         public DynamicHost(DynamicComponentProxy child)
         {
@@ -91,8 +91,8 @@ namespace QuestPDF.Elements
         internal ContentDirection ContentDirection { get; set; }
     
         // サブセットフォント情報
-        internal Dictionary<string, StringBuilder> Subsets { get; set; }
-        internal string SubsetSuffix { get; set; }
+        internal Dictionary<string, StringBuilder>? Subsets { get; set; }
+        internal string? SubsetSuffix { get; set; }
         
         public int PageNumber { get; internal set; }
         public int TotalPages { get; internal set; }
@@ -102,8 +102,8 @@ namespace QuestPDF.Elements
         {
             var container = new DynamicElement();
             content(container);
-            
-            // サブセットフォント情報を渡す
+
+            // フォント名ごとにテキスト情報の収集、フォントファミリー名をsuffix付きに変更する。
             container.ApplyInheritedAndGlobalTexStyle(TextStyle, Subsets, SubsetSuffix);
             container.ApplyContentDirection(ContentDirection);
             
