@@ -1,3 +1,20 @@
+# QuestPDF 2022.12 with Font Subsetting
+
+**QuestPDF** の MIT License でリリースされた最後のバージョン（2022.12）に、**フォントのサブセット化**（未使用グリフの削減）機能を組み込んだものです。
+
+フォントサブセット化には [Diva.FontSubsetting](https://github.com/diva-osaka/Diva.FontSubsetting) を使用しているため、Diva.FontSubsetting の制限を受けます。また、次の制限もあります。
+
+- **FontManager** に登録していないフォント（例: `QuestPDF.Helpers.Fonts` を使用した場合など）は、サブセット化されません。  
+- フォントファミリー単位でテキストを収集し、サブセットフォントを作成します。  
+  - つまり、同じファミリー名でも、weight などサブファミリーが複数存在する場合は最適化されていません。
+  - 例: 同名の Regular と Bold フォントが登録されている場合、同種のグリフを含んだ Regular と Bold のサブセットフォントが PDF に埋め込まれます。
+- さらに、**QuestPDF の `Dynamic` コンポーネント**を使用する場合、`Dynamic` 内部の要素ごと、`Dynamic` 以外の要素ごとに別々にテキストを収集し、それぞれ別のサブセットフォントを作成します。  
+  - このため、Dynamic コンポーネントを使用している場合も最適化されていません。
+- ASCII 印刷可能文字を必ず含めるようにしています。
+
+
+---
+
 <a href="https://www.questpdf.com/" target="_blank">
   <img src="https://github.com/QuestPDF/example-invoice/raw/main/images/logo.svg" width="400"> 
 </a>
