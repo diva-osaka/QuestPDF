@@ -3,7 +3,7 @@
         <Authors>MarcinZiabek</Authors>
         <Company>CodeFlint</Company>
         <PackageId>Diva.QuestPDF</PackageId>
-        <Version>2022.12.15.4</Version>
+        <Version>2022.12.15.5</Version>
         <PackageDescription>QuestPDF is an open-source, modern and battle-tested library that can help you with generating PDF documents by offering friendly, discoverable and predictable C# fluent API. Easily generate PDF reports, invoices, exports, etc.</PackageDescription>
         <LangVersion>default</LangVersion>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
@@ -23,6 +23,7 @@ Forked and maintained by DIVA, this version is based on v2022.12.15 and introduc
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="Diva.FontSubsetting" Version="1.0.7" />
       <PackageReference Include="SkiaSharp" Version="2.88.7" />
       <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.7" />
     </ItemGroup>
@@ -63,9 +64,5 @@ Forked and maintained by DIVA, this version is based on v2022.12.15 and introduc
       <EmbeddedResource Include="Resources\DefaultFont\Lato-Thin.ttf" />
       <None Remove="Resources\DefaultFont\Lato-ThinItalic.ttf" />
       <EmbeddedResource Include="Resources\DefaultFont\Lato-ThinItalic.ttf" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="Diva.FontSubsetting" Version="1.0.5" />
     </ItemGroup>
 </Project>
