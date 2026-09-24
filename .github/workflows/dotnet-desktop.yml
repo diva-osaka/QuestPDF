@@ -47,6 +47,15 @@ jobs:
         if: always()
         run: dotnet nuget remove source DIVA || true
 
+      - name: Check vulnerable packages
+        run: |
+          OUTPUT=$(dotnet list Source/QuestPDF.sln package --vulnerable --include-transitive 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "has the following vulnerable packages"; then
+            echo "::error::脆弱性のあるパッケージが見つかりました"
+            exit 1
+          fi
+
       - name: Get version
         id: version
         run: echo "version=$(dotnet msbuild "$PROJECT" -getProperty:Version)" >> "$GITHUB_OUTPUT"
