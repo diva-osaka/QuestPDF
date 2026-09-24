@@ -1,6 +1,6 @@
 name: Build and Release
 
-# PR: ビルドとパッケージ作成のみ
+# PR: ビルド・ユニットテスト・パッケージ作成のみ
 # 2022.12.diva へのマージ: csproj の Version のタグ（v{Version}）が未作成なら GitHub Packages へ公開し、タグと Release を作成する
 
 on:
@@ -36,17 +36,27 @@ jobs:
         with:
           global-json-file: Source/global.json
 
-      - name: Authenticate NuGet
-        run: dotnet nuget add source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --name DIVA --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text
+      # 認証情報は restore の間だけ NuGet 設定に置き、ビルド前に削除する
+      # （ビルドで実行されるプロジェクトのコードから、トークンを読めないようにするため）
+      - name: Restore
+        run: |
+          dotnet nuget add source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --name DIVA --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text
+          dotnet restore Source/QuestPDF.sln
+
+      - name: Remove NuGet credentials
+        if: always()
+        run: dotnet nuget remove source DIVA || true
 
       - name: Get version
         id: version
         run: echo "version=$(dotnet msbuild "$PROJECT" -getProperty:Version)" >> "$GITHUB_OUTPUT"
 
-      # GeneratePackageOnBuild が有効なため、ビルドで bin/Release に nupkg が作成される
-      # （サンプル・テストプロジェクトはライブラリの対象フレームワークと合っていないため、ライブラリのみビルドする）
+      # GeneratePackageOnBuild が有効なため、ビルドで Source/QuestPDF/bin/Release に nupkg が作成される
       - name: Build
-        run: dotnet build "$PROJECT" -c Release
+        run: dotnet build Source/QuestPDF.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Source/QuestPDF.UnitTests/QuestPDF.UnitTests.csproj -c Release --no-build
 
       # GitHub Packages は snupkg 非対応（シンボルは DebugType=embedded で dll に埋め込み済み）
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -94,12 +104,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # --skip-duplicate は付けない（手動で公開済みの場合に、別内容の nupkg を Release に添付しないよう失敗させる）
+      # 初回実行では --skip-duplicate を付けない（手動で公開済みの場合に、別内容の nupkg を Release に添付しないよう失敗させる）
+      # 再実行時は、前回の試行で公開だけ成功して Release 作成に失敗した可能性があるため重複を許容する
+      # （「Re-run failed jobs」なら同じ run の artifact を使うため、公開済みのものと同じ nupkg になる）
       - name: Publish to GitHub Packages
         if: steps.check.outputs.released == 'false'
         run: |
+          EXTRA=()
+          if [ "${GITHUB_RUN_ATTEMPT:-1}" -gt 1 ]; then EXTRA=(--skip-duplicate); fi
           for pkg in ./artifacts/*.nupkg; do
-            dotnet nuget push "$pkg" --source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --api-key "$GH_TOKEN"
+            dotnet nuget push "$pkg" --source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --api-key "$GH_TOKEN" "${EXTRA[@]}"
           done
 
       - name: Create release
