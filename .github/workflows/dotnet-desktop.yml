@@ -1,54 +1,107 @@
-name: Build And Create Nuget Package
+name: Build and Release
+
+# PR: ビルドとパッケージ作成のみ
+# 2022.12.diva へのマージ: csproj の Version のタグ（v{Version}）が未作成なら GitHub Packages へ公開し、タグと Release を作成する
 
 on:
   push:
-    branches: [ main ]
+    branches: [ 2022.12.diva ]
   pull_request:
-    branches: [ main ]
+    branches: [ 2022.12.diva ]
   workflow_dispatch:
-  schedule:
-    - cron: '3 0 * * 0'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  PROJECT: Source/QuestPDF/QuestPDF.csproj
 
 jobs:
-  main:
-    runs-on: ${{ matrix.environment }}
-    strategy:
-      matrix:
-        environment:
-          - macos-latest
-          - ubuntu-latest
-          - windows-latest
-    env:
-      DOTNET_NOLOGO: 1
-      DOTNET_CLI_TELEMETRY_OPTOUT: 1
-      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
-      UNIT_TEST_PROJECT: QuestPDF.UnitTests/QuestPDF.UnitTests.csproj
-
+  build:
+    runs-on: ubuntu-latest
+    # Diva.FontSubsetting を GitHub Packages から取得するため
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: 📝 Fetch Sources 📝
-        uses: actions/checkout@v3
-
-      - name: ⚙ Setup .NET 8.0 SDK ⚙
-        uses: actions/setup-dotnet@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: '8.0.x'
-          
-      - name: 🔄 Restore Nuget Packages 🔄
-        shell: bash
-        run: dotnet restore
-        working-directory: ./Source
+          persist-credentials: false
 
-      - name: 🛠 Build Solution 🛠
-        shell: bash
-        run: dotnet build -c Release --no-restore
-        working-directory: ./Source
-        
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
-        if: ${{ matrix.environment == 'windows-latest' }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          name: Build Package
-          path: |
-            **/*.nupkg
-            **/*.snupkg
-            !.nuget
+          global-json-file: Source/global.json
+
+      - name: Authenticate NuGet
+        run: dotnet nuget add source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --name DIVA --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text
+
+      - name: Get version
+        id: version
+        run: echo "version=$(dotnet msbuild "$PROJECT" -getProperty:Version)" >> "$GITHUB_OUTPUT"
+
+      # GeneratePackageOnBuild が有効なため、ビルドで bin/Release に nupkg が作成される
+      # （サンプル・テストプロジェクトはライブラリの対象フレームワークと合っていないため、ライブラリのみビルドする）
+      - name: Build
+        run: dotnet build "$PROJECT" -c Release
+
+      # GitHub Packages は snupkg 非対応（シンボルは DebugType=embedded で dll に埋め込み済み）
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nupkg
+          path: Source/QuestPDF/bin/Release/*.nupkg
+          if-no-files-found: error
+
+  # 書き込み権限はこのジョブだけに与える（リポジトリのコードはチェックアウト・実行しない）
+  release:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/2022.12.diva'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    # 同時に実行されると、タグ確認から Release 作成までの間に競合するため直列化する
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: v${{ needs.build.outputs.version }}
+    steps:
+      - name: Check if already released
+        id: check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")
+          case "$STATUS" in
+            200) echo "released=true" >> "$GITHUB_OUTPUT"; echo "$TAG はリリース済みのため公開をスキップします" ;;
+            404) echo "released=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "タグの確認に失敗しました (HTTP $STATUS)"; exit 1 ;;
+          esac
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: steps.check.outputs.released == 'false'
+        with:
+          name: nupkg
+          path: ./artifacts
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.check.outputs.released == 'false'
+        with:
+          dotnet-version: '10.0.x'
+
+      # --skip-duplicate は付けない（手動で公開済みの場合に、別内容の nupkg を Release に添付しないよう失敗させる）
+      - name: Publish to GitHub Packages
+        if: steps.check.outputs.released == 'false'
+        run: |
+          for pkg in ./artifacts/*.nupkg; do
+            dotnet nuget push "$pkg" --source "https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json" --api-key "$GH_TOKEN"
+          done
+
+      - name: Create release
+        if: steps.check.outputs.released == 'false'
+        run: gh release create "$TAG" ./artifacts/*.nupkg --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --generate-notes
